@@ -1,0 +1,43 @@
+{
+  "entities": {
+    "Session": {
+      "title": "Chat Session",
+      "description": "A conversation session between the user and Midorima.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "systemInstruction": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["id", "userId", "title", "systemInstruction", "createdAt"]
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "A single message in a chat session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "model", "system"] },
+        "content": { "type": "string" },
+        "allContents": { "type": "array", "items": { "type": "string" } },
+        "activeIndex": { "type": "number" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["id", "sessionId", "role", "content", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Top-level collection for chat sessions."
+    },
+    "/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Sub-collection for messages within a session."
+    }
+  }
+}

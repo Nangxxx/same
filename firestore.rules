@@ -1,0 +1,89 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Sessions collection
+    match /sessions/{sessionId} {
+      function isValidSession(data) {
+        return data.id is string 
+          && data.userId == request.auth.uid 
+          && data.title is string && data.title.size() <= 500
+          && data.systemInstruction is string && data.systemInstruction.size() <= 10000
+          && data.createdAt is timestamp
+          && (data.get('updatedAt', request.time) is timestamp);
+      }
+
+      allow create: if isSignedIn() 
+        && isValidId(sessionId)
+        && isValidSession(request.resource.data)
+        && request.resource.data.id == sessionId
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isSignedIn()
+        && isOwner(resource.data.userId)
+        && isValidSession(request.resource.data)
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.id == resource.data.id
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'systemInstruction', 'updatedAt']);
+
+      allow delete: if isSignedIn() && isOwner(resource.data.userId);
+      
+      allow get: if isSignedIn() && isOwner(resource.data.userId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // Messages sub-collection
+      match /messages/{messageId} {
+        function isValidMessage(data) {
+          return data.id is string
+            && data.sessionId == sessionId
+            && data.role in ['user', 'model', 'system']
+            && data.content is string && data.content.size() <= 20000
+            && (data.get('allContents', []).size() <= 31)
+            && (data.get('activeIndex', 0) is number)
+            && data.timestamp is timestamp;
+        }
+
+        // Access depends on owning the parent session
+        function canAccessSession() {
+          let session = get(/databases/$(database)/documents/sessions/$(sessionId));
+          return session != null && session.data.userId == request.auth.uid;
+        }
+
+        allow create: if isSignedIn()
+          && isValidId(messageId)
+          && isValidMessage(request.resource.data)
+          && canAccessSession()
+          && request.resource.data.timestamp == request.time;
+
+        allow update: if isSignedIn() 
+          && canAccessSession()
+          && isValidMessage(request.resource.data)
+          && request.resource.data.timestamp == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'allContents', 'activeIndex', 'timestamp']);
+
+        allow delete: if isSignedIn() && canAccessSession();
+
+        allow get, list: if isSignedIn() && canAccessSession();
+      }
+    }
+  }
+}
