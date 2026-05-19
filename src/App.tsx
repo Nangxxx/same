@@ -96,6 +96,8 @@ export default function App() {
   const [charAvatar, setCharAvatar] = useState<string>(midorimaAvatar);
   const [userTraits, setUserTraits] = useState("Một sinh viên bình thường, đôi khi hơi nghịch ngợm.");
   const [tempUserTraits, setTempUserTraits] = useState("Một sinh viên bình thường, đôi khi hơi nghịch ngợm.");
+  const [charTraits, setCharTraits] = useState("Vô cảm, nghiêm khắc, kỷ luật.");
+  const [tempCharTraitsState, setTempCharTraitsState] = useState("Vô cảm, nghiêm khắc, kỷ luật.");
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [systemInstruction, setSystemInstruction] = useState(DEFAULT_SYSTEM_INSTRUCTION);
@@ -213,6 +215,11 @@ export default function App() {
       setUserTraits(savedTraits);
       setTempUserTraits(savedTraits);
     }
+    const savedCharTraits = localStorage.getItem("char_traits");
+    if (savedCharTraits) {
+      setCharTraits(savedCharTraits);
+      setTempCharTraitsState(savedCharTraits);
+    }
     const savedAvatar = localStorage.getItem("user_avatar");
     if (savedAvatar) {
       setUserAvatar(savedAvatar);
@@ -226,6 +233,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("user_traits", userTraits);
   }, [userTraits]);
+
+  useEffect(() => {
+    localStorage.setItem("char_traits", charTraits);
+  }, [charTraits]);
 
   useEffect(() => {
     if (userAvatar) localStorage.setItem("user_avatar", userAvatar);
@@ -364,7 +375,7 @@ export default function App() {
       const currentMessages = [...messages];
       const apiMessages = [...currentMessages, userMsg];
       
-      const personalizedInstruction = `${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
+      const personalizedInstruction = `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
@@ -520,7 +531,7 @@ export default function App() {
         }
       ];
 
-      const personalizedInstruction = `${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
+      const personalizedInstruction = `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
@@ -604,7 +615,7 @@ export default function App() {
     try {
       let accumulated = "";
       const apiMessages = prevMsgs;
-      const personalizedInstruction = `${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
+      const personalizedInstruction = `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
@@ -752,15 +763,22 @@ export default function App() {
   const handleSaveSettings = () => {
     setSystemInstruction(tempInstruction);
     setInitialPrompt(tempInitialPrompt);
+    setCharTraits(tempCharTraitsState);
     setIsSettingsOpen(false);
   };
 
   const handleLogin = async () => {
     try {
+      console.log('Initiating Google Login...');
       await signInWithGoogle();
+      console.log('Google Login successful');
     } catch (error: any) {
+      console.error('Login error full:', error);
       if (error.code !== 'auth/popup-closed-by-user') {
-        console.error('Login error:', error);
+        console.error('Login error code:', error.code);
+        console.error('Login error message:', error.message);
+      } else {
+        console.log('Popup closed by user');
       }
     }
   };
@@ -1275,6 +1293,15 @@ export default function App() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-bold uppercase tracking-widest text-neutral-400 mb-3 ml-1">Đặc điểm nhân vật (Character Traits)</label>
+                  <textarea
+                    value={tempCharTraitsState}
+                    onChange={(e) => setTempCharTraitsState(e.target.value)}
+                    className="w-full h-[100px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-sans mb-6"
+                    placeholder="Nhập đặc điểm của Midorima..."
+                  />
+                </div>
+                <div>
                   <label className="block text-xs font-bold uppercase tracking-widest text-neutral-400 mb-3 ml-1">Tính cách nhân vật (System Instruction)</label>
                   <textarea
                     value={tempInstruction}
@@ -1290,6 +1317,7 @@ export default function App() {
                   onClick={() => {
                     setTempInstruction(DEFAULT_SYSTEM_INSTRUCTION);
                     setTempInitialPrompt(DEFAULT_INITIAL_PROMPT);
+                    setTempCharTraitsState("Vô cảm, nghiêm khắc, kỷ luật.");
                   }}
                   className="px-4 py-2 text-sm text-neutral-400 font-bold hover:text-neutral-900 transition-all uppercase tracking-wide"
                 >

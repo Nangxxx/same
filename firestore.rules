@@ -64,8 +64,8 @@ service cloud.firestore {
 
         // Access depends on owning the parent session
         function canAccessSession() {
-          let session = get(/databases/$(database)/documents/sessions/$(sessionId));
-          return session != null && session.data.userId == request.auth.uid;
+          return exists(/databases/$(database)/documents/sessions/$(sessionId)) 
+                 && get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid;
         }
 
         allow create: if isSignedIn()
