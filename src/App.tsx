@@ -755,44 +755,31 @@ export default function App() {
     setIsSettingsOpen(false);
   };
 
+  const handleLogin = async () => {
+    try {
+      await signInWithGoogle();
+    } catch (error: any) {
+      if (error.code !== 'auth/popup-closed-by-user') {
+        console.error('Login error:', error);
+      }
+    }
+  };
+
   return (
     <div className="flex h-screen bg-neutral-100 text-neutral-800 font-sans overflow-hidden">
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col relative min-w-0 bg-white">
         <header className="flex items-center justify-between px-6 py-3 border-b border-neutral-100 shrink-0 bg-white">
           <div className="flex items-center gap-3">
-            <button 
+            <h2 className="text-sm font-semibold text-neutral-400">Midorima Shintaro</h2>
+          </div>
+          <div className="flex items-center">
+            <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-              className="p-2 -ml-2 hover:bg-neutral-100 rounded-xl transition-all"
+              className="p-2 mr-2 hover:bg-neutral-100 rounded-xl transition-all"
             >
               <Menu size={20} className="text-neutral-600" />
             </button>
-            <h2 className="text-sm font-semibold text-neutral-400">Midorima Shintaro</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {user ? (
-              <div className="flex items-center gap-3">
-                <div className="flex flex-col items-end hidden sm:flex">
-                  <span className="text-[11px] font-bold text-neutral-900">{user.displayName || "Người dùng"}</span>
-                  <span className="text-[10px] text-neutral-400">{user.email}</span>
-                </div>
-                <button 
-                  onClick={logout}
-                  className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-all flex items-center gap-2"
-                  title="Đăng xuất"
-                >
-                  <LogOut size={18} />
-                </button>
-              </div>
-            ) : (
-              <button 
-                onClick={signInWithGoogle}
-                className="flex items-center gap-2 px-4 py-2 bg-neutral-900 text-white rounded-xl text-xs font-bold hover:bg-neutral-800 transition-all shadow-sm"
-              >
-                <LogIn size={14} />
-                <span>Đăng nhập</span>
-              </button>
-            )}
           </div>
         </header>
 
@@ -979,12 +966,19 @@ export default function App() {
             onSubmit={handleSend}
             className="max-w-3xl mx-auto relative pointer-events-auto"
           >
-            <input
-              type="text"
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
               placeholder="Gửi tin nhắn cho Midorima Shintaro..."
-              className="w-full bg-neutral-100 border-none rounded-full py-4 pl-6 pr-14 text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50"
+              className="w-full bg-neutral-100 border-none rounded-2xl py-4 pl-6 pr-14 text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50 resize-none overflow-y-auto max-h-32"
+              rows={1}
+              style={{ minHeight: '56px' }}
             />
             <button
               type="submit"
@@ -1138,6 +1132,32 @@ export default function App() {
               </button>
             </div>
           </div>
+
+          <div className="p-4 border-t border-neutral-200">
+            {user ? (
+              <div className="flex items-center gap-3 bg-neutral-100 p-3 rounded-xl">
+                <div className="flex flex-col flex-1 overflow-hidden">
+                  <span className="text-[11px] font-bold text-neutral-900 truncate">{user.displayName || "Người dùng"}</span>
+                  <span className="text-[10px] text-neutral-400 truncate">{user.email}</span>
+                </div>
+                <button 
+                  onClick={logout}
+                  className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-all"
+                  title="Đăng xuất"
+                >
+                  <LogOut size={18} />
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={handleLogin}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-neutral-900 text-white rounded-xl text-xs font-bold hover:bg-neutral-800 transition-all shadow-sm"
+              >
+                <LogIn size={14} />
+                <span>Đăng nhập</span>
+              </button>
+            )}
+           </div>
         </div>
       </motion.aside>
 

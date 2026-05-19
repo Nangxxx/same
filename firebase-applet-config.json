@@ -1,10 +1,10 @@
 {
-  "projectId": "thinking-sunspot-6cf5x",
-  "appId": "1:669112802181:web:0107d10fc925850c9f02ec",
-  "apiKey": "AIzaSyCFdGU4TmY2BQJc9QxhKFET8VaelT2hM7I",
-  "authDomain": "thinking-sunspot-6cf5x.firebaseapp.com",
+  "projectId": "formyhell-65718",
+  "appId": "1:652681107597:web:f62a1acf4a1b7083ddaac4",
+  "apiKey": "AIzaSyDrKXB3la2CRotA9-7t0CbmOiAEHIYTiKs",
+  "authDomain": "formyhell-65718.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-2e49412c-d029-4bca-a507-ce052cd889f2",
-  "storageBucket": "thinking-sunspot-6cf5x.firebasestorage.app",
-  "messagingSenderId": "669112802181",
+  "storageBucket": "formyhell-65718.firebasestorage.app",
+  "messagingSenderId": "652681107597",
   "measurementId": ""
 }

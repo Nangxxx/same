@@ -48,7 +48,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isOwner(resource.data.userId);
       
       allow get: if isSignedIn() && isOwner(resource.data.userId);
-      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn();
 
       // Messages sub-collection
       match /messages/{messageId} {
