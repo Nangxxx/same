@@ -1,10 +1,10 @@
 {
-  "projectId": "formyhell-65718",
-  "appId": "1:652681107597:web:f62a1acf4a1b7083ddaac4",
-  "apiKey": "AIzaSyDrKXB3la2CRotA9-7t0CbmOiAEHIYTiKs",
-  "authDomain": "formyhell-65718.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-2e49412c-d029-4bca-a507-ce052cd889f2",
-  "storageBucket": "formyhell-65718.firebasestorage.app",
-  "messagingSenderId": "652681107597",
+  "projectId": "hellno-fb05d",
+  "appId": "1:839922335001:web:77d943efd0d37c76559988",
+  "apiKey": "AIzaSyC5ozmcP6PUhXQzpKfX195rdbrMYtRauF4",
+  "authDomain": "hellno-fb05d.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "hellno-fb05d.firebasestorage.app",
+  "messagingSenderId": "839922335001",
   "measurementId": ""
 }

@@ -62,27 +62,27 @@ service cloud.firestore {
             && data.timestamp is timestamp;
         }
 
-        // Access depends on owning the parent session
-        function canAccessSession() {
-          return exists(/databases/$(database)/documents/sessions/$(sessionId)) 
-                 && get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid;
+        function isSessionOwner() {
+          return get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid;
         }
 
         allow create: if isSignedIn()
           && isValidId(messageId)
           && isValidMessage(request.resource.data)
-          && canAccessSession()
+          && isSessionOwner()
           && request.resource.data.timestamp == request.time;
 
         allow update: if isSignedIn() 
-          && canAccessSession()
+          && isSessionOwner()
           && isValidMessage(request.resource.data)
           && request.resource.data.timestamp == request.time
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'allContents', 'activeIndex', 'timestamp']);
 
-        allow delete: if isSignedIn() && canAccessSession();
+        allow delete: if isSignedIn() && isSessionOwner();
 
-        allow get, list: if isSignedIn() && canAccessSession();
+        allow list: if isSignedIn() && isSessionOwner();
+        allow get: if isSignedIn() && isSessionOwner();
+
       }
     }
   }
