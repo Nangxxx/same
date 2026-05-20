@@ -107,6 +107,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const streamingMessageRef = useRef<{ id: string; content: string } | null>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
@@ -190,9 +191,25 @@ export default function App() {
       const unsubscribeMessages = onSnapshot(q, (snapshot) => {
         const msgList = snapshot.docs.map(doc => {
           const data = doc.data();
+          const msgId = doc.id;
+          let content = data.content || "";
+          let allContents = data.allContents;
+          let activeIndex = data.activeIndex;
+          
+          if (streamingMessageRef.current && streamingMessageRef.current.id === msgId) {
+            content = streamingMessageRef.current.content;
+            if (allContents && activeIndex !== undefined && activeIndex < allContents.length) {
+              allContents = [...allContents];
+              allContents[activeIndex] = content;
+            }
+          }
+
           return {
             ...data,
-            id: doc.id,
+            id: msgId,
+            content,
+            allContents,
+            activeIndex,
             timestamp: data.timestamp?.toMillis ? data.timestamp.toMillis() : data.timestamp
           } as Message;
         });
@@ -376,6 +393,7 @@ export default function App() {
 
     setInput("");
     setIsLoading(true);
+    streamingMessageRef.current = { id: aiMsgId, content: "" };
 
     try {
       let accumulated = "";
@@ -386,6 +404,9 @@ export default function App() {
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
+        if (streamingMessageRef.current && streamingMessageRef.current.id === aiMsgId) {
+          streamingMessageRef.current.content = accumulated;
+        }
         if (user) {
           setSessions(prev => prev.map(s => {
             if (s.id === currentSessionId) {
@@ -419,6 +440,7 @@ export default function App() {
         updateSessionMessages(currentSessionId, [...messages, userMsg, { ...aiMsg, content: "⚠️ " + errorMsg }]);
       }
     } finally {
+      streamingMessageRef.current = null;
       setIsLoading(false);
     }
   };
@@ -524,6 +546,7 @@ export default function App() {
       updateSessionMessages(currentSessionId, [...messages, aiMsg]);
     }
     setIsLoading(true);
+    streamingMessageRef.current = { id: aiMsgId, content: "" };
 
     try {
       let accumulated = "";
@@ -541,6 +564,9 @@ export default function App() {
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
+        if (streamingMessageRef.current && streamingMessageRef.current.id === aiMsgId) {
+          streamingMessageRef.current.content = accumulated;
+        }
         if (user) {
           setSessions(prev => prev.map(s => {
             if (s.id === currentSessionId) {
@@ -575,6 +601,7 @@ export default function App() {
         updateSessionMessages(currentSessionId, updatedMsgs);
       }
     } finally {
+      streamingMessageRef.current = null;
       setIsLoading(false);
     }
   };
@@ -616,6 +643,7 @@ export default function App() {
     }
 
     setIsLoading(true);
+    streamingMessageRef.current = { id: targetId, content: "" };
     try {
       let accumulated = "";
       const apiMessages = prevMsgs;
@@ -623,6 +651,9 @@ export default function App() {
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
+        if (streamingMessageRef.current && streamingMessageRef.current.id === targetId) {
+          streamingMessageRef.current.content = accumulated;
+        }
         if (user) {
           setSessions(prev => prev.map(s => {
             if (s.id === currentSessionId) {
@@ -671,6 +702,7 @@ export default function App() {
         updateSessionMessages(currentSessionId, newMsgs);
       }
     } finally {
+      streamingMessageRef.current = null;
       setIsLoading(false);
     }
   };
@@ -1003,7 +1035,7 @@ export default function App() {
                 }
               }}
               placeholder="Gửi tin nhắn cho Midorima Shintaro..."
-              className="w-full bg-neutral-100 border-none rounded-2xl py-4 pl-6 pr-14 text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50 resize-none overflow-y-auto max-h-32"
+              className="w-full bg-neutral-100 border-none rounded-2xl py-4 pl-6 pr-14 text-[16px] md:text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50 resize-none overflow-y-auto max-h-32"
               rows={1}
               style={{ minHeight: '56px' }}
             />
@@ -1259,7 +1291,7 @@ export default function App() {
                     <textarea
                       value={tempUserTraits}
                       onChange={(e) => setTempUserTraits(e.target.value)}
-                      className="w-full h-[120px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700"
+                      className="w-full h-[120px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[16px] md:text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700"
                       placeholder="Miêu tả bạn để Midorima có thể nhận diện..."
                     />
                   </div>
@@ -1321,7 +1353,7 @@ export default function App() {
                   <textarea
                     value={tempInitialPrompt}
                     onChange={(e) => setTempInitialPrompt(e.target.value)}
-                    className="w-full h-[120px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-sans mb-6"
+                    className="w-full h-[120px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[16px] md:text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-sans mb-6"
                     placeholder="Nhập lời mở đầu..."
                   />
                 </div>
@@ -1331,7 +1363,7 @@ export default function App() {
                   <textarea
                     value={tempCharTraitsState}
                     onChange={(e) => setTempCharTraitsState(e.target.value)}
-                    className="w-full h-[100px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-sans mb-6"
+                    className="w-full h-[100px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[16px] md:text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-sans mb-6"
                     placeholder="Nhập đặc điểm của Midorima..."
                   />
                 </div>
@@ -1340,7 +1372,7 @@ export default function App() {
                   <textarea
                     value={tempInstruction}
                     onChange={(e) => setTempInstruction(e.target.value)}
-                    className="w-full h-[400px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-serif"
+                    className="w-full h-[400px] bg-neutral-50 border border-neutral-200 rounded-2xl p-4 text-[16px] md:text-[14px] leading-relaxed focus:outline-none focus:ring-2 focus:ring-neutral-200 text-neutral-700 font-serif"
                     placeholder="Nhập tính cách của Midorima..."
                   />
                 </div>
