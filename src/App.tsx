@@ -283,6 +283,73 @@ export default function App() {
     localStorage.setItem("initial_prompt", initialPrompt);
   }, [initialPrompt]);
 
+  const saveUserConfigInFirestore = async (updatedConfig: {
+    systemInstruction?: string;
+    initialPrompt?: string;
+    userTraits?: string;
+    charTraits?: string;
+    userAvatar?: string | null;
+    charAvatar?: string;
+  }) => {
+    if (!auth.currentUser) return;
+    try {
+      const configRef = doc(db, "userConfigs", auth.currentUser.uid);
+      await setDoc(configRef, updatedConfig, { merge: true });
+    } catch (e) {
+      console.error("Lỗi đồng bộ cấu hình Firestore:", e);
+    }
+  };
+
+  // Sync cloud configs during login / state changes
+  useEffect(() => {
+    const fetchUserConfig = async () => {
+      if (user) {
+        try {
+          const configRef = doc(db, "userConfigs", user.uid);
+          const configSnap = await getDoc(configRef);
+          if (configSnap.exists()) {
+            const data = configSnap.data();
+            if (data.systemInstruction !== undefined) {
+              setSystemInstruction(data.systemInstruction);
+              setTempInstruction(data.systemInstruction);
+            }
+            if (data.initialPrompt !== undefined) {
+              setInitialPrompt(data.initialPrompt);
+              setTempInitialPrompt(data.initialPrompt);
+            }
+            if (data.userTraits !== undefined) {
+              setUserTraits(data.userTraits);
+              setTempUserTraits(data.userTraits);
+            }
+            if (data.charTraits !== undefined) {
+              setCharTraits(data.charTraits);
+              setTempCharTraitsState(data.charTraits);
+            }
+            if (data.userAvatar !== undefined) {
+              setUserAvatar(data.userAvatar);
+            }
+            if (data.charAvatar !== undefined) {
+              setCharAvatar(data.charAvatar);
+            }
+          } else {
+            // First login: seed current locally set settings
+            await setDoc(configRef, {
+              systemInstruction,
+              initialPrompt,
+              userTraits,
+              charTraits,
+              userAvatar,
+              charAvatar
+            });
+          }
+        } catch (error) {
+          console.error("Lỗi khi tải cấu hình người dùng từ Firestore:", error);
+        }
+      }
+    };
+    fetchUserConfig();
+  }, [user]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -790,8 +857,12 @@ export default function App() {
     }
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     setUserTraits(tempUserTraits);
+    localStorage.setItem("user_traits", tempUserTraits);
+    if (user) {
+      await saveUserConfigInFirestore({ userTraits: tempUserTraits });
+    }
     setIsProfileOpen(false);
   };
 
@@ -799,8 +870,13 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setUserAvatar(reader.result as string);
+      reader.onloadend = async () => {
+        const resultSrc = reader.result as string;
+        setUserAvatar(resultSrc);
+        localStorage.setItem("user_avatar", resultSrc);
+        if (user) {
+          await saveUserConfigInFirestore({ userAvatar: resultSrc });
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -810,17 +886,34 @@ export default function App() {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setCharAvatar(reader.result as string);
+      reader.onloadend = async () => {
+        const resultSrc = reader.result as string;
+        setCharAvatar(resultSrc);
+        localStorage.setItem("char_avatar", resultSrc);
+        if (user) {
+          await saveUserConfigInFirestore({ charAvatar: resultSrc });
+        }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     setSystemInstruction(tempInstruction);
     setInitialPrompt(tempInitialPrompt);
     setCharTraits(tempCharTraitsState);
+
+    localStorage.setItem("system_instruction", tempInstruction);
+    localStorage.setItem("initial_prompt", tempInitialPrompt);
+    localStorage.setItem("char_traits", tempCharTraitsState);
+
+    if (user) {
+      await saveUserConfigInFirestore({
+        systemInstruction: tempInstruction,
+        initialPrompt: tempInitialPrompt,
+        charTraits: tempCharTraitsState
+      });
+    }
     setIsSettingsOpen(false);
   };
 
