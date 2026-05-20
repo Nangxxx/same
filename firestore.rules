@@ -1,8 +1,7 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
+    // 1. Global safety net
     match /{document=**} {
       allow read, write: if false;
     }
@@ -12,78 +11,88 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    function emailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Sessions collection
+    // 2. ChatSession rules
     match /sessions/{sessionId} {
-      function isValidSession(data) {
-        return data.id is string 
-          && data.userId == request.auth.uid 
-          && data.title is string && data.title.size() <= 500
-          && data.systemInstruction is string && data.systemInstruction.size() <= 10000
-          && data.createdAt is timestamp
-          && (data.get('updatedAt', request.time) is timestamp);
-      }
+      allow create: if isSignedIn() && emailVerified() && isValidId(sessionId) && isValidChatSessionCreate(request.resource.data);
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && emailVerified() && isValidId(sessionId) &&
+                    resource.data.userId == request.auth.uid &&
+                    incomingChatSessionIsValid(request.resource.data) &&
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.id == resource.data.id &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'updatedAt', 'systemInstruction']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
 
-      allow create: if isSignedIn() 
-        && isValidId(sessionId)
-        && isValidSession(request.resource.data)
-        && request.resource.data.id == sessionId
-        && request.resource.data.createdAt == request.time;
-
-      allow update: if isSignedIn()
-        && isOwner(resource.data.userId)
-        && isValidSession(request.resource.data)
-        && request.resource.data.userId == resource.data.userId
-        && request.resource.data.id == resource.data.id
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'systemInstruction', 'updatedAt']);
-
-      allow delete: if isSignedIn() && isOwner(resource.data.userId);
-      
-      allow get: if isSignedIn() && isOwner(resource.data.userId);
-      allow list: if isSignedIn();
-
-      // Messages sub-collection
+      // 3. Messages rules
       match /messages/{messageId} {
-        function isValidMessage(data) {
-          return data.id is string
-            && data.sessionId == sessionId
-            && data.role in ['user', 'model', 'system']
-            && data.content is string && data.content.size() <= 20000
-            && (data.get('allContents', []).size() <= 31)
-            && (data.get('activeIndex', 0) is number)
-            && data.timestamp is timestamp;
-        }
-
-        function isSessionOwner() {
-          return get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid;
-        }
-
-        allow create: if isSignedIn()
-          && isValidId(messageId)
-          && isValidMessage(request.resource.data)
-          && isSessionOwner()
-          && request.resource.data.timestamp == request.time;
-
-        allow update: if isSignedIn() 
-          && isSessionOwner()
-          && isValidMessage(request.resource.data)
-          && request.resource.data.timestamp == request.time
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'allContents', 'activeIndex', 'timestamp']);
-
-        allow delete: if isSignedIn() && isSessionOwner();
-
-        allow list: if isSignedIn() && isSessionOwner();
-        allow get: if isSignedIn() && isSessionOwner();
-
+        allow create: if isSignedIn() && emailVerified() && isValidId(sessionId) && isValidId(messageId) &&
+                      get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid &&
+                      isValidMessageCreate(request.resource.data, sessionId);
+        allow get: if isSignedIn() && (
+                      !exists(/databases/$(database)/documents/sessions/$(sessionId)) ||
+                      get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid
+                    );
+        allow list: if isSignedIn() && (
+                      !exists(/databases/$(database)/documents/sessions/$(sessionId)) ||
+                      get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid
+                    );
+        allow update: if isSignedIn() && emailVerified() && isValidId(sessionId) && isValidId(messageId) &&
+                      get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid &&
+                      request.resource.data.id == resource.data.id &&
+                      request.resource.data.role == resource.data.role &&
+                      request.resource.data.sessionId == resource.data.sessionId &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'timestamp', 'allContents', 'activeIndex']) &&
+                      isValidMessageUpdate(request.resource.data, sessionId);
+        allow delete: if isSignedIn() && get(/databases/$(database)/documents/sessions/$(sessionId)).data.userId == request.auth.uid;
       }
+    }
+
+    // ChatSession schema helper functions
+    function isValidChatSessionCreate(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() <= 500 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.systemInstruction is string && data.systemInstruction.size() <= 100000 &&
+             data.createdAt == request.time;
+    }
+
+    function incomingChatSessionIsValid(data) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.title is string && data.title.size() <= 500 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.systemInstruction is string && data.systemInstruction.size() <= 100000 &&
+             (data.updatedAt == request.time || !('updatedAt' in data));
+    }
+
+    // Message schema helper functions
+    function isValidMessageCreate(data, sessionId) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.role is string && (data.role == 'user' || data.role == 'model' || data.role == 'system') &&
+             data.content is string && data.content.size() <= 50000 &&
+             data.sessionId is string && data.sessionId == sessionId &&
+             data.timestamp == request.time &&
+             (!('allContents' in data) || (data.allContents is list && data.allContents.size() <= 100)) &&
+             (!('activeIndex' in data) || (data.activeIndex is int));
+    }
+
+    function isValidMessageUpdate(data, sessionId) {
+      return data.id is string && data.id.size() <= 128 &&
+             data.role is string && (data.role == 'user' || data.role == 'model' || data.role == 'system') &&
+             data.content is string && data.content.size() <= 50000 &&
+             data.sessionId is string && data.sessionId == sessionId &&
+             (data.timestamp == request.time || !('timestamp' in data)) &&
+             (!('allContents' in data) || (data.allContents is list && data.allContents.size() <= 100)) &&
+             (!('activeIndex' in data) || (data.activeIndex is int));
     }
   }
 }

@@ -64,7 +64,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     },
     operationType,
     path
-  }
+  };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
@@ -104,6 +104,7 @@ export default function App() {
   const [tempInstruction, setTempInstruction] = useState(DEFAULT_SYSTEM_INSTRUCTION);
   const [initialPrompt, setInitialPrompt] = useState(DEFAULT_INITIAL_PROMPT);
   const [tempInitialPrompt, setTempInitialPrompt] = useState(DEFAULT_INITIAL_PROMPT);
+  const [authError, setAuthError] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -147,10 +148,14 @@ export default function App() {
       );
 
       const unsubscribeSessions = onSnapshot(q, (snapshot) => {
-        const sessionList: ChatSession[] = snapshot.docs.map(doc => ({
-          ...doc.data() as ChatSession,
-          id: doc.id
-        }));
+        const sessionList: ChatSession[] = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            ...data,
+            id: doc.id,
+            createdAt: data.createdAt?.toMillis ? data.createdAt.toMillis() : data.createdAt
+          } as ChatSession;
+        });
         setSessions(sessionList);
         
         if (sessionList.length > 0 && !currentSessionId) {
@@ -183,7 +188,14 @@ export default function App() {
       );
 
       const unsubscribeMessages = onSnapshot(q, (snapshot) => {
-        const msgList = snapshot.docs.map(doc => doc.data() as Message);
+        const msgList = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            ...data,
+            id: doc.id,
+            timestamp: data.timestamp?.toMillis ? data.timestamp.toMillis() : data.timestamp
+          } as Message;
+        });
         setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, messages: msgList } : s));
       }, (error) => {
         handleFirestoreError(error, OperationType.LIST, `sessions/${currentSessionId}/messages`);
@@ -262,6 +274,18 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
+  const saveMessageToFirestore = async (sessionId: string, message: Message) => {
+    if (!auth.currentUser) return;
+    try {
+      await setDoc(doc(db, "sessions", sessionId, "messages", message.id), {
+        ...message,
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/messages/${message.id}`);
+    }
+  };
+
   const createNewChat = async () => {
     const id = Date.now().toString();
     const newSession: ChatSession = {
@@ -285,7 +309,6 @@ export default function App() {
     } else {
       setSessions(prev => [newSession, ...prev]);
     }
-    
     setCurrentSessionId(id);
     handleInitialResponse(id);
   };
@@ -311,30 +334,13 @@ export default function App() {
   };
 
   const updateSessionMessages = async (sessionId: string, newMessages: Message[]) => {
-    if (user) {
-      // For Firestore, we typically update individual messages rather than the whole list
-      // But for simplicity in this migration, we might want to ensure the latest messages are synced
-      // Actually, handleSend and others should handle individual doc writes.
-      // updateSessionMessages here is mainly for UI state in LocalStorage mode.
-    } else {
+    if (!user) {
       setSessions(prev => prev.map(s => {
         if (s.id === sessionId) {
           return { ...s, messages: newMessages };
         }
         return s;
       }));
-    }
-  };
-
-  const saveMessageToFirestore = async (sessionId: string, message: Message) => {
-    if (!user) return;
-    try {
-      await setDoc(doc(db, "sessions", sessionId, "messages", message.id), {
-        ...message,
-        timestamp: serverTimestamp()
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `sessions/${sessionId}/messages/${message.id}`);
     }
   };
 
@@ -364,7 +370,8 @@ export default function App() {
       await saveMessageToFirestore(currentSessionId, userMsg);
       await saveMessageToFirestore(currentSessionId, aiMsg);
     } else {
-      updateSessionMessages(currentSessionId, [...messages, userMsg, aiMsg]);
+      const updatedMsgs = [...messages, userMsg, aiMsg];
+      updateSessionMessages(currentSessionId, updatedMsgs);
     }
 
     setInput("");
@@ -390,14 +397,15 @@ export default function App() {
             return s;
           }));
         } else {
-          const updatedMsgs = [...messages, userMsg, { ...aiMsg, content: accumulated }];
-          updateSessionMessages(currentSessionId, updatedMsgs);
+          const currentMsgs = [...messages, userMsg, { ...aiMsg, content: accumulated }];
+          updateSessionMessages(currentSessionId, currentMsgs);
         }
       }, personalizedInstruction);
 
       if (user) {
         await saveMessageToFirestore(currentSessionId, { ...aiMsg, content: accumulated });
       }
+
     } catch (error: any) {
       console.error("Chat error:", error);
       let errorMsg = "Đã có lỗi xảy ra. Vui lòng thử lại.";
@@ -417,7 +425,6 @@ export default function App() {
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    // Optional: show a toast or alert, but let's keep it simple for now
   };
 
   const handleNewChatFromHere = async (msgId: string) => {
@@ -431,7 +438,7 @@ export default function App() {
       id,
       userId: user?.uid,
       title: "Tiếp nối từ " + (messages[idx].content.slice(0, 15) || "đây") + "...",
-      messages: user ? [] : newMsgs, // Firestore sync will handle messages for logged in user
+      messages: user ? [] : newMsgs,
       systemInstruction: currentSession?.systemInstruction || systemInstruction,
       createdAt: Date.now()
     };
@@ -439,7 +446,6 @@ export default function App() {
     if (user) {
       try {
         await setDoc(doc(db, "sessions", id), { ...newSession, createdAt: serverTimestamp() });
-        // Copy messages to sub-collection
         const batch = writeBatch(db);
         newMsgs.forEach(m => {
           const mRef = doc(db, "sessions", id, "messages", m.id);
@@ -452,7 +458,7 @@ export default function App() {
     } else {
       setSessions(prev => [newSession, ...prev]);
     }
-    
+
     setCurrentSessionId(id);
     setIsSidebarOpen(true);
   };
@@ -554,6 +560,7 @@ export default function App() {
       if (user) {
         await saveMessageToFirestore(currentSessionId, { ...aiMsg, content: accumulated });
       }
+
     } catch (error: any) {
       console.error("Continue error:", error);
       let errorMsg = "⚠️ Hết lượt sử dụng hoặc lỗi xảy ra. Vui lòng thử lại.";
@@ -575,7 +582,6 @@ export default function App() {
   const handleRegenerate = async (msgId?: string) => {
     if (!currentSessionId || messages.length === 0 || isLoading) return;
     
-    // Default to last message if no ID provided
     const targetId = msgId || messages[messages.length - 1].id;
     const msgIndex = messages.findIndex(m => m.id === targetId);
     if (msgIndex === -1) return;
@@ -585,10 +591,8 @@ export default function App() {
 
     const prevMsgs = messages.slice(0, msgIndex);
     
-    // Initialize versions if needed
     const currentVersions = targetMsg.allContents || [targetMsg.content];
     if (currentVersions.length >= 30) {
-      // Limit to 30 as requested
       return;
     }
 
@@ -635,9 +639,7 @@ export default function App() {
             return s;
           }));
         } else {
-          const currentMsgs = [...messages];
-          const latestMsg = currentMsgs.find(m => m.id === targetId);
-          const versions = latestMsg?.allContents || newVersions;
+          const versions = [...newVersions];
           versions[newIndex] = accumulated;
 
           const newMsgs = [...messages];
@@ -702,12 +704,14 @@ export default function App() {
   const deleteSession = async (id: string) => {
     if (user) {
       try {
-        // Delete all messages first (optional but good practice)
         const msgsSnap = await getDocs(collection(db, "sessions", id, "messages"));
         const batch = writeBatch(db);
         msgsSnap.forEach(d => batch.delete(d.ref));
         batch.delete(doc(db, "sessions", id));
         await batch.commit();
+        if (currentSessionId === id) {
+          setCurrentSessionId(null);
+        }
       } catch (error) {
         handleFirestoreError(error, OperationType.DELETE, `sessions/${id}`);
       }
@@ -731,6 +735,27 @@ export default function App() {
       setSessions(prev => prev.map(s => s.id === id ? { ...s, title: newTitle } : s));
     }
     setEditingSessionId(null);
+  };
+
+  const handleLogin = async () => {
+    try {
+      setAuthError(null);
+      console.log('Initiating Google Login...');
+      await signInWithGoogle();
+      console.log('Google Login successful');
+    } catch (error: any) {
+      const isPopupClosed = error?.code === 'auth/popup-closed-by-user' || 
+                            error?.message?.includes('popup-closed-by-user') ||
+                            error?.code === 'auth/cancelled-popup-request' ||
+                            error?.message?.includes('cancelled-popup-request');
+      if (isPopupClosed) {
+        console.warn('Popup closed or cancelled by user');
+        setAuthError('Cửa sổ đăng nhập đã bị đóng trước khi hoàn tất.');
+      } else {
+        console.error('Login error full:', error);
+        setAuthError(error?.message || 'Lỗi đăng nhập. Vui lòng thử lại.');
+      }
+    }
   };
 
   const handleSaveProfile = () => {
@@ -765,22 +790,6 @@ export default function App() {
     setInitialPrompt(tempInitialPrompt);
     setCharTraits(tempCharTraitsState);
     setIsSettingsOpen(false);
-  };
-
-  const handleLogin = async () => {
-    try {
-      console.log('Initiating Google Login...');
-      await signInWithGoogle();
-      console.log('Google Login successful');
-    } catch (error: any) {
-      console.error('Login error full:', error);
-      if (error.code !== 'auth/popup-closed-by-user') {
-        console.error('Login error code:', error.code);
-        console.error('Login error message:', error.message);
-      } else {
-        console.log('Popup closed by user');
-      }
-    }
   };
 
   return (
@@ -1151,31 +1160,56 @@ export default function App() {
             </div>
           </div>
 
-          <div className="p-4 border-t border-neutral-200">
+          <div className="p-4 border-t border-neutral-200 bg-neutral-100/50 space-y-3">
+            {authError && (
+              <div className="bg-red-50 text-red-600 border border-red-200 rounded-xl p-3 text-xs font-semibold leading-relaxed animate-pulse">
+                {authError}
+              </div>
+            )}
+
             {user ? (
-              <div className="flex items-center gap-3 bg-neutral-100 p-3 rounded-xl">
-                <div className="flex flex-col flex-1 overflow-hidden">
-                  <span className="text-[11px] font-bold text-neutral-900 truncate">{user.displayName || "Người dùng"}</span>
-                  <span className="text-[10px] text-neutral-400 truncate">{user.email}</span>
+              <div className="flex items-center justify-between bg-white border border-neutral-200 rounded-2xl p-3 shadow-sm transition-all hover:shadow-md">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="w-9 h-9 rounded-full overflow-hidden border border-neutral-100 shrink-0">
+                    {user.photoURL ? (
+                      <img src={user.photoURL} alt={user.displayName || ""} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                    ) : (
+                      <div className="w-full h-full bg-neutral-200 flex items-center justify-center">
+                        <User size={16} className="text-neutral-400" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold text-neutral-800 truncate leading-tight">
+                      {user.displayName || "Người dùng Cloud"}
+                    </span>
+                    <span className="text-[10px] text-neutral-500 truncate leading-none mt-1">
+                      {user.email || ""}
+                    </span>
+                  </div>
                 </div>
-                <button 
-                  onClick={logout}
-                  className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-all"
+                <button
+                  onClick={() => logout()}
                   title="Đăng xuất"
+                  className="p-2 text-neutral-400 hover:text-red-500 hover:bg-neutral-100 rounded-xl transition-all"
                 >
-                  <LogOut size={18} />
+                  <LogOut size={16} />
                 </button>
               </div>
             ) : (
               <button 
                 onClick={handleLogin}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-neutral-900 text-white rounded-xl text-xs font-bold hover:bg-neutral-800 transition-all shadow-sm"
+                className="w-full flex items-center justify-center gap-3 px-4 py-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl transition-all text-xs font-bold shadow-lg shadow-neutral-900/10 hover:shadow-neutral-900/20"
               >
-                <LogIn size={14} />
-                <span>Đăng nhập</span>
+                <LogIn size={15} />
+                Đăng nhập lưu trữ Cloud
               </button>
             )}
-           </div>
+
+            <div className="text-[10px] text-center text-neutral-400 font-semibold uppercase tracking-wider py-1">
+              {user ? "Đã đồng bộ hóa Cloud Firestore" : "Bản lưu trữ Local (Chưa đăng nhập)"}
+            </div>
+          </div>
         </div>
       </motion.aside>
 

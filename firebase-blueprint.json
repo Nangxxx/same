@@ -1,43 +1,86 @@
 {
   "entities": {
-    "Session": {
-      "title": "Chat Session",
-      "description": "A conversation session between the user and Midorima.",
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "A conversation or chat session created by a user",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "userId": { "type": "string" },
-        "title": { "type": "string" },
-        "systemInstruction": { "type": "string" },
-        "createdAt": { "type": "number" },
-        "updatedAt": { "type": "number" }
+        "id": {
+          "type": "string",
+          "description": "Unique session ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase User UID who owns this chat session"
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the chat session"
+        },
+        "systemInstruction": {
+          "type": "string",
+          "description": "Custom system instructions/context for the assistant"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
       },
-      "required": ["id", "userId", "title", "systemInstruction", "createdAt"]
+      "required": ["id", "userId", "title"]
     },
     "Message": {
-      "title": "Chat Message",
-      "description": "A single message in a chat session.",
+      "title": "Message",
+      "description": "An individual message within a ChatSession",
       "type": "object",
       "properties": {
-        "id": { "type": "string" },
-        "sessionId": { "type": "string" },
-        "role": { "type": "string", "enum": ["user", "model", "system"] },
-        "content": { "type": "string" },
-        "allContents": { "type": "array", "items": { "type": "string" } },
-        "activeIndex": { "type": "number" },
-        "timestamp": { "type": "number" }
+        "id": {
+          "type": "string",
+          "description": "Unique message ID"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["user", "model", "system"],
+          "description": "Role of the message author"
+        },
+        "content": {
+          "type": "string",
+          "description": "The textual content of the message"
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "ID of the parent ChatSession"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "allContents": {
+          "type": "array",
+          "description": "Alternative content versions generated during regeneration"
+        },
+        "activeIndex": {
+          "type": "integer",
+          "description": "Index of the active message content version"
+        }
       },
-      "required": ["id", "sessionId", "role", "content", "timestamp"]
+      "required": ["id", "role", "content"]
     }
   },
   "firestore": {
-    "/sessions/{sessionId}": {
-      "schema": "Session",
-      "description": "Top-level collection for chat sessions."
+    "sessions": {
+      "schema": "ChatSession",
+      "description": "Collection of all chat sessions"
     },
-    "/sessions/{sessionId}/messages/{messageId}": {
+    "sessions/{sessionId}/messages": {
       "schema": "Message",
-      "description": "Sub-collection for messages within a session."
+      "description": "Subcollection of messages inside a session"
     }
   }
 }
