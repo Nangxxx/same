@@ -82,11 +82,56 @@ interface ChatSession {
   createdAt: number;
 }
 
+interface ChatInputProps {
+  onSend: (text: string) => void;
+  isLoading: boolean;
+  currentSessionId: string | null;
+}
+
+function ChatInput({ onSend, isLoading, currentSessionId }: ChatInputProps) {
+  const [value, setValue] = useState("");
+
+  const handleSubmit = (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!value.trim() || isLoading || !currentSessionId) return;
+    onSend(value);
+    setValue("");
+  };
+
+  return (
+    <form 
+      onSubmit={handleSubmit}
+      className="max-w-3xl mx-auto relative pointer-events-auto"
+    >
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
+        placeholder="Gửi tin nhắn cho Midorima Shintaro..."
+        className="w-full bg-neutral-100 border-none rounded-2xl py-4 pl-6 pr-14 text-[16px] md:text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50 resize-none overflow-y-auto max-h-32"
+        rows={1}
+        style={{ minHeight: '56px' }}
+      />
+      <button
+        type="submit"
+        disabled={isLoading || !value.trim() || !currentSessionId}
+        className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-neutral-900 text-white disabled:opacity-30 transition-all"
+      >
+        <Send size={18} />
+      </button>
+    </form>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isHistoryOpen, setIsHistoryOpen] = useState(true);
@@ -428,15 +473,14 @@ export default function App() {
     }
   };
 
-  const handleSend = async (e?: FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim() || isLoading || !currentSessionId) return;
+  const handleSend = async (text: string) => {
+    if (!text.trim() || isLoading || !currentSessionId) return;
 
     const userMsgId = Date.now().toString();
     const userMsg: Message = { 
       id: userMsgId, 
       role: "user", 
-      content: input,
+      content: text,
       sessionId: currentSessionId,
       timestamp: Date.now() 
     };
@@ -458,7 +502,6 @@ export default function App() {
       updateSessionMessages(currentSessionId, updatedMsgs);
     }
 
-    setInput("");
     setIsLoading(true);
     streamingMessageRef.current = { id: aiMsgId, content: "" };
 
@@ -1114,32 +1157,11 @@ export default function App() {
                 </button>
              )}
           </div>
-          <form 
-            onSubmit={handleSend}
-            className="max-w-3xl mx-auto relative pointer-events-auto"
-          >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="Gửi tin nhắn cho Midorima Shintaro..."
-              className="w-full bg-neutral-100 border-none rounded-2xl py-4 pl-6 pr-14 text-[16px] md:text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50 resize-none overflow-y-auto max-h-32"
-              rows={1}
-              style={{ minHeight: '56px' }}
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim() || !currentSessionId}
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-neutral-900 text-white disabled:opacity-30 transition-all"
-            >
-              <Send size={18} />
-            </button>
-          </form>
+          <ChatInput 
+            onSend={handleSend}
+            isLoading={isLoading}
+            currentSessionId={currentSessionId}
+          />
         </div>
       </div>
 
