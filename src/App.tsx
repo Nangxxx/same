@@ -276,8 +276,14 @@ export default function App() {
   useEffect(() => {
     const savedInstruction = localStorage.getItem("system_instruction");
     if (savedInstruction) {
-      setSystemInstruction(savedInstruction);
-      setTempInstruction(savedInstruction);
+      if (!savedInstruction.includes("BILINGUAL") && !savedInstruction.includes("SONG NGỮ")) {
+        setSystemInstruction(DEFAULT_SYSTEM_INSTRUCTION);
+        setTempInstruction(DEFAULT_SYSTEM_INSTRUCTION);
+        localStorage.setItem("system_instruction", DEFAULT_SYSTEM_INSTRUCTION);
+      } else {
+        setSystemInstruction(savedInstruction);
+        setTempInstruction(savedInstruction);
+      }
     }
     const savedPrompt = localStorage.getItem("initial_prompt");
     if (savedPrompt) {
