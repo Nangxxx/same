@@ -1,5 +1,3 @@
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-
 export const DEFAULT_SYSTEM_INSTRUCTION = `
 ---
 
@@ -39,19 +37,6 @@ export const DEFAULT_SYSTEM_INSTRUCTION = `
 
 export const DEFAULT_INITIAL_PROMPT = `Theo bối cảnh tự thiết lập`;
 
-let ai: GoogleGenAI | null = null;
-
-export function getGenAI() {
-  if (!ai) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY is missing. Please set it in the Secrets panel.");
-    }
-    ai = new GoogleGenAI({ apiKey });
-  }
-  return ai;
-}
-
 export type Message = {
   role: "user" | "model" | "system";
   id: string;
@@ -71,50 +56,54 @@ export async function chatStream(
     console.error("chatStream called with empty messages");
     return;
   }
-  
-  const genAI = getGenAI();
-  
-  // Format messages for the API
-  const history = messages.slice(0, -1).map(m => ({
-    role: m.role === "model" ? "model" as const : "user" as const,
-    parts: [{ text: m.content || "" }]
-  }));
 
-  const lastMessage = messages[messages.length - 1].content || "";
-
-  const chat = genAI.chats.create({
-    model: "gemini-3.5-flash",
-    config: {
-      systemInstruction: systemInstruction,
-      safetySettings: [
-        {
-          category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        },
-        {
-          category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-          threshold: HarmBlockThreshold.BLOCK_NONE
-        }
-      ]
+  const response = await fetch("/api/chat-stream", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
     },
-    history: history
+    body: JSON.stringify({
+      messages,
+      systemInstruction,
+    }),
   });
 
-  const result = await chat.sendMessageStream({
-    message: lastMessage,
-  });
-
-  for await (const chunk of result) {
-    if (chunk.text) {
-      onChunk(chunk.text);
+  if (!response.ok) {
+    let errText = "";
+    try {
+      errText = await response.text();
+    } catch {
+      errText = `HTTP error! status: ${response.status}`;
     }
+    
+    let parsedErr: any;
+    try {
+      parsedErr = JSON.parse(errText);
+    } catch {
+      parsedErr = { error: errText };
+    }
+    
+    let errMsg = parsedErr.message || parsedErr.error || `HTTP error! status: ${response.status}`;
+    // If it's a quota error or service unavailable error, ensure we have explicit keywords for downstream matching
+    if (parsedErr.error === "QUOTA_EXHAUSTED" || response.status === 429) {
+      errMsg = `QUOTA_EXHAUSTED: ${errMsg}`;
+    } else if (parsedErr.error === "TEMPORARILY_UNAVAILABLE" || response.status === 503) {
+      errMsg = `TEMPORARILY_UNAVAILABLE: ${errMsg}`;
+    }
+    throw new Error(errMsg);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("No response streaming body found");
+  }
+
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    onChunk(chunk);
   }
 }
+

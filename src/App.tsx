@@ -10,7 +10,8 @@ import {
   Trash2, RotateCcw, Settings, Plus, MessageSquare, 
   ChevronLeft, ChevronRight, Save, X, Edit3,
   Share2, Flag, MoreHorizontal, History,
-  Settings2, UserCircle, RefreshCcw, Menu, LogIn, LogOut
+  Settings2, UserCircle, RefreshCcw, Menu, LogIn, LogOut,
+  Gauge, AlertTriangle, Download
 } from "lucide-react";
 import Markdown from "react-markdown";
 import { chatStream, Message, DEFAULT_INITIAL_PROMPT, DEFAULT_SYSTEM_INSTRUCTION } from "./services/gemini";
@@ -86,14 +87,15 @@ interface ChatInputProps {
   onSend: (text: string) => void;
   isLoading: boolean;
   currentSessionId: string | null;
+  isQuotaExceeded: boolean;
 }
 
-function ChatInput({ onSend, isLoading, currentSessionId }: ChatInputProps) {
+function ChatInput({ onSend, isLoading, currentSessionId, isQuotaExceeded }: ChatInputProps) {
   const [value, setValue] = useState("");
 
   const handleSubmit = (e?: FormEvent) => {
     e?.preventDefault();
-    if (!value.trim() || isLoading || !currentSessionId) return;
+    if (!value.trim() || isLoading || !currentSessionId || isQuotaExceeded) return;
     onSend(value);
     setValue("");
   };
@@ -112,14 +114,19 @@ function ChatInput({ onSend, isLoading, currentSessionId }: ChatInputProps) {
             handleSubmit();
           }
         }}
-        placeholder="Gửi tin nhắn cho Midorima Shintaro..."
-        className="w-full bg-neutral-100 border-none rounded-2xl py-4 pl-6 pr-14 text-[16px] md:text-[15px] focus:outline-none shadow-sm placeholder:text-neutral-400 transition-all focus:bg-neutral-50 resize-none overflow-y-auto max-h-32"
+        disabled={isQuotaExceeded}
+        placeholder={isQuotaExceeded ? "⚠️ Hết hạn mức API hôm nay (1.500/1.500 tin). Vào Tùy chỉnh để xem chi tiết." : "Gửi tin nhắn cho Midorima Shintaro..."}
+        className={`w-full border-none rounded-2xl py-4 pl-6 pr-14 text-[16px] md:text-[15px] focus:outline-none shadow-sm transition-all resize-none overflow-y-auto max-h-32 ${
+          isQuotaExceeded 
+            ? "bg-red-50 text-red-700 placeholder:text-red-400 cursor-not-allowed" 
+            : "bg-neutral-100 placeholder:text-neutral-400 focus:bg-neutral-50"
+        }`}
         rows={1}
         style={{ minHeight: '56px' }}
       />
       <button
         type="submit"
-        disabled={isLoading || !value.trim() || !currentSessionId}
+        disabled={isLoading || !value.trim() || !currentSessionId || isQuotaExceeded}
         className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-neutral-900 text-white disabled:opacity-30 transition-all"
       >
         <Send size={18} />
@@ -151,11 +158,139 @@ export default function App() {
   const [tempInitialPrompt, setTempInitialPrompt] = useState(DEFAULT_INITIAL_PROMPT);
   const [authError, setAuthError] = useState<string | null>(null);
   
+  // API message tracking
+  const getTodayDateString = () => {
+    return new Date().toLocaleDateString('en-CA'); // Outputs "YYYY-MM-DD" reliably based on local timezone
+  };
+
+  const [messageCountData, setMessageCountData] = useState<{ date: string; count: number }>(() => {
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const saved = localStorage.getItem("messages_sent_today");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.date === todayStr) {
+          return parsed;
+        }
+      } catch (err) {
+        console.error("Error parsing message count from localStorage:", err);
+      }
+    }
+    return { date: todayStr, count: 0 };
+  });
+
+  const [simulatedCountSetting, setSimulatedCountSetting] = useState<number | null>(null);
+
+  const incrementMessageCount = () => {
+    setMessageCountData(prev => {
+      const todayStr = getTodayDateString();
+      const newCount = prev.date === todayStr ? prev.count + 1 : 1;
+      const updated = { date: todayStr, count: newCount };
+      localStorage.setItem("messages_sent_today", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const isQuotaExceeded = (simulatedCountSetting !== null ? simulatedCountSetting : messageCountData.count) >= 1500;
+
+  const getColorForCount = (c: number) => {
+    if (c >= 1500) return "bg-red-500 animate-pulse";
+    if (c >= 1200) return "bg-amber-500";
+    return "bg-neutral-950";
+  };
+
+  const getWarningText = (c: number) => {
+    if (c >= 1500) {
+      return {
+        text: "Đã chạm giới hạn sử dụng chính thức hôm nay (1.500/1.500). Gemini API sẽ ngưng phản hồi cho đến ngày mai (hoặc khi reset).",
+        color: "text-red-700",
+        bg: "bg-red-50 border-red-200"
+      };
+    }
+    if (c >= 1200) {
+      return {
+        text: "⚠️ Sắp đạt giới hạn! Bạn đã gửi hơn 80% quota tin nhắn cho phép trong một ngày. Vui lòng sử dụng tiết kiệm.",
+        color: "text-amber-800",
+        bg: "bg-amber-50 border-amber-200"
+      };
+    }
+    return {
+      text: "Hạn mức API an toàn. Bạn đang sử dụng gói Gemini API Free Tier (1.500 requests/ngày) ổn định.",
+      color: "text-neutral-600",
+      bg: "bg-neutral-50/50 border-neutral-200"
+    };
+  };
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamingMessageRef = useRef<{ id: string; content: string } | null>(null);
 
   const currentSession = sessions.find(s => s.id === currentSessionId);
   const messages = currentSession?.messages || [];
+
+  const handleExportChat = () => {
+    if (!messages || messages.length === 0) return;
+    
+    let textContent = `======================================================================\n`;
+    textContent += `      LỊCH SỬ HỘI THOẠI ROLEPLAY VỚI NHÂN VẬT: MIDORIMA SHINTARO\n`;
+    textContent += `======================================================================\n`;
+    textContent += `Thời gian xuất tệp: ${new Date().toLocaleString('vi-VN')}\n`;
+    textContent += `Tên cuộc trò chuyện: ${currentSession?.title || "Chưa đặt tên"}\n`;
+    textContent += `Tổng số lượt tin nhắn: ${messages.length}\n`;
+    textContent += `----------------------------------------------------------------------\n\n`;
+
+    const getFormattedTime = (timestamp: any) => {
+      if (!timestamp) return "";
+      try {
+        let d: Date;
+        if (typeof timestamp === "number") {
+          d = new Date(timestamp);
+        } else if (timestamp instanceof Date) {
+          d = timestamp;
+        } else if (timestamp && typeof timestamp === "object" && typeof timestamp.seconds === "number") {
+          d = new Date(timestamp.seconds * 1000);
+        } else if (timestamp && typeof timestamp === "object" && typeof timestamp.toDate === "function") {
+          d = timestamp.toDate();
+        } else {
+          d = new Date(timestamp);
+        }
+        if (isNaN(d.getTime())) return "";
+        return ` - [${d.toLocaleString("vi-VN")}]`;
+      } catch (err) {
+        return "";
+      }
+    };
+
+    messages.forEach((msg, idx) => {
+      const sender = msg.role === "user" ? "BẠN" : "MIDORIMA SHINTARO";
+      const timeStr = getFormattedTime(msg.timestamp);
+      textContent += `[${idx + 1}] [${sender}]${timeStr}\n\n`;
+      textContent += `${msg.content}\n\n`;
+      textContent += `----------------------------------------------------------------------\n\n`;
+    });
+
+    textContent += `=== HẾT PHẦN TRÒ CHUYỆN ===\n`;
+
+    try {
+      const blob = new Blob([textContent], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      const safeTitle = (currentSession?.title || "Midorima_Shintaro_RP")
+        .trim()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "_");
+      
+      const fileDate = new Date().toISOString().slice(0, 10);
+      link.download = `Midorima_RP_${safeTitle}_${fileDate}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+    }
+  };
 
   // Firebase Connection Test
   useEffect(() => {
@@ -448,6 +583,85 @@ export default function App() {
     handleInitialResponse(id);
   };
 
+  const getPersonalizedInstructionForSession = (sessionId: string | null) => {
+    let firstMsg = "";
+    
+    // 1. Get the list of messages for this session
+    let sessionMessages: Message[] = [];
+    if (sessionId === currentSessionId && messages && messages.length > 0) {
+      sessionMessages = messages;
+    } else {
+      const session = sessions.find(s => s.id === sessionId);
+      if (session && session.messages) {
+        sessionMessages = session.messages;
+      }
+    }
+
+    // 2. Determine the representative message content to check for language
+    if (sessionMessages && sessionMessages.length > 0) {
+      // Find the first message that is NOT the default Vietnamese placeholder "Theo bối cảnh tự thiết lập"
+      const nonDefaultMsg = sessionMessages.find(m => 
+        m.content && 
+        m.content.trim().length > 0 && 
+        !m.content.includes("Theo bối cảnh tự thiết lập")
+      );
+      
+      if (nonDefaultMsg) {
+        firstMsg = nonDefaultMsg.content;
+      } else {
+        // If all messages are default/empty, use the first message
+        firstMsg = sessionMessages[0].content || "";
+      }
+    }
+
+    // 3. Fallback to initialPrompt if firstMsg is still empty or default placeholder
+    if (!firstMsg || !firstMsg.trim() || firstMsg.includes("Theo bối cảnh tự thiết lập")) {
+      firstMsg = initialPrompt || "";
+    }
+    
+    // 4. Multi-layered highly robust language detection
+    const detectIsVietnamese = (text: string): boolean => {
+      if (!text) return false;
+      const normalized = text.normalize("NFC").trim();
+      
+      // If it contains the default Vietnamese template, obviously it is Vietnamese
+      if (normalized.includes("Theo bối cảnh tự thiết lập")) {
+        return true;
+      }
+
+      // Explicit set of uppercase/lowercase Vietnamese accented characters/vowels
+      const viAccentRegex = /[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệđìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđĐÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆĐÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴ]/;
+      if (viAccentRegex.test(normalized)) {
+        return true;
+      }
+      
+      // Stop word list checks
+      const viStopWords = /\b(với|cho|của|ở|và|là|tôi|bạn|cậu|anh|hắn|không|có|được|trong|một|người|chào|bồ|nhé|nha|thì|mà|này|kia|đó|sao|gì)\b/i;
+      if (viStopWords.test(normalized)) {
+        return true;
+      }
+      
+      return false;
+    };
+
+    const isVietnamese = detectIsVietnamese(firstMsg);
+    
+    let languageDirective = "";
+    if (isVietnamese) {
+      languageDirective = `\n\n---
+[CRITICAL BILINGUAL MANDATE]
+The first message / initial prompt of this chat session is in Vietnamese. Therefore, YOU MUST conduct this ENTIRE session (including all actions, third-person narrations, internal monologues, and dialogue responses) 100% IN VIETNAMESE. Strictly NEVER write any English narration, dialogue, or descriptions. All thoughts of Midorima must be expressed in fluent, descriptive Vietnamese. Do not mix English words into your response unless they are specific proper nouns like Midorima, Shintaro, Oha Asa, Shutoku, etc.
+---`;
+    } else {
+      languageDirective = `\n\n---
+[CRITICAL BILINGUAL MANDATE]
+The first message / initial prompt of this chat session is in English. Therefore, YOU MUST conduct this ENTIRE session (including all actions, third-person narrations, internal monologues, and dialogue responses) 100% IN ENGLISH. Strictly NEVER write any Vietnamese narration, dialogue, or descriptions. All thoughts of Midorima must be expressed in fluent, descriptive English. Do not mix Vietnamese words (like "cậu", "hắn", "anh") into your English narration or thoughts under any circumstances.
+---`;
+    }
+
+    return `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}${languageDirective}`;
+  };
+
   const handleInitialResponse = async (sessionId: string) => {
     setIsLoading(true);
     
@@ -516,7 +730,9 @@ export default function App() {
       const currentMessages = [...messages];
       const apiMessages = [...currentMessages, userMsg];
       
-      const personalizedInstruction = `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
+      const personalizedInstruction = getPersonalizedInstructionForSession(currentSessionId);
+
+      incrementMessageCount();
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
@@ -546,8 +762,10 @@ export default function App() {
     } catch (error: any) {
       console.error("Chat error:", error);
       let errorMsg = "Đã có lỗi xảy ra. Vui lòng thử lại.";
-      if (error?.message?.includes("quota") || error?.message?.includes("429")) {
-        errorMsg = "Hết lượt sử dụng (Quota exceeded). Vui lòng thử lại sau giây lát hoặc ngày mai.";
+      if (error?.message?.toLowerCase().includes("quota") || error?.message?.includes("429") || error?.message?.includes("QUOTA_EXHAUSTED") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
+        errorMsg = "Hết tài nguyên hoặc vượt quá hạn mức sử dụng miễn phí (Quota limit exceeded). Vui lòng thử lại sau giây lát hoặc nâng cấp tài khoản của bạn tại AI Studio.";
+      } else if (error?.message?.toLowerCase().includes("unavailable") || error?.message?.includes("503") || error?.message?.includes("TEMPORARILY_UNAVAILABLE")) {
+        errorMsg = "Phản hồi bận rộn do hệ thống AI quá tải tạm thời (High demand/Service Unavailable). Vui lòng đợi vài giây và bấm gửi lại hoặc bấm nút tái tạo phản hồi.";
       }
       
       if (user) {
@@ -676,7 +894,9 @@ export default function App() {
         }
       ];
 
-      const personalizedInstruction = `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
+      const personalizedInstruction = getPersonalizedInstructionForSession(currentSessionId);
+
+      incrementMessageCount();
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
@@ -705,9 +925,11 @@ export default function App() {
 
     } catch (error: any) {
       console.error("Continue error:", error);
-      let errorMsg = "⚠️ Hết lượt sử dụng hoặc lỗi xảy ra. Vui lòng thử lại.";
-      if (error?.message?.includes("quota") || error?.message?.includes("429")) {
-        errorMsg = "⚠️ Hết lượt sử dụng (Quota exceeded).";
+      let errorMsg = "⚠️ Đã xảy ra lỗi khi tiếp tục truyện. Vui lòng thử lại.";
+      if (error?.message?.toLowerCase().includes("quota") || error?.message?.includes("429") || error?.message?.includes("QUOTA_EXHAUSTED") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
+        errorMsg = "⚠️ Vượt quá hạn mức sử dụng (Quota limit exceeded). Vui lòng nâng cấp gói dịch vụ hoặc chờ giây lát.";
+      } else if (error?.message?.toLowerCase().includes("unavailable") || error?.message?.includes("503") || error?.message?.includes("TEMPORARILY_UNAVAILABLE")) {
+        errorMsg = "⚠️ Đang quá tải tạm thời (High demand/Service Unavailable). Vui lòng chờ vài giây rồi bấm tiếp tục lại.";
       }
       
       if (user) {
@@ -763,7 +985,9 @@ export default function App() {
     try {
       let accumulated = "";
       const apiMessages = prevMsgs;
-      const personalizedInstruction = `ĐẶC ĐIỂM NHÂN VẬT (Midorima):\n${charTraits}\n\n${systemInstruction}\n\nTHÔNG TIN VỀ {{user}} (Người đang trò chuyện với bạn):\n${userTraits}`;
+      const personalizedInstruction = getPersonalizedInstructionForSession(currentSessionId);
+
+      incrementMessageCount();
 
       await chatStream(apiMessages, async (chunk) => {
         accumulated += chunk;
@@ -805,8 +1029,10 @@ export default function App() {
     } catch (error: any) {
       console.error("Regenerate error:", error);
       let errorMsg = "⚠️ Lỗi tạo lại phản hồi.";
-      if (error?.message?.includes("quota") || error?.message?.includes("429")) {
-        errorMsg = "⚠️ Hết lượt sử dụng (Quota exceeded).";
+      if (error?.message?.toLowerCase().includes("quota") || error?.message?.includes("429") || error?.message?.includes("QUOTA_EXHAUSTED") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
+        errorMsg = "⚠️ Vượt quá hạn mức sử dụng (Quota limit exceeded). Vui lòng thử lại sau giây lát hoặc nâng cấp tài khoản.";
+      } else if (error?.message?.toLowerCase().includes("unavailable") || error?.message?.includes("503") || error?.message?.includes("TEMPORARILY_UNAVAILABLE")) {
+        errorMsg = "⚠️ Lỗi bận hệ thống (High demand/Service Unavailable). Vui lòng chờ vài giây rồi bấm nút tái tạo lại.";
       }
       
       if (user) {
@@ -974,7 +1200,44 @@ export default function App() {
           <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-neutral-400">Midorima Shintaro</h2>
           </div>
-          <div className="flex items-center">
+
+          {/* Interactive API Quota HUD Indicator */}
+          {(() => {
+            const activeCount = simulatedCountSetting !== null ? simulatedCountSetting : messageCountData.count;
+            const percent = Math.min((activeCount / 1500) * 100, 100);
+            return (
+              <div 
+                onClick={() => setIsSettingsOpen(true)}
+                title="Theo dõi hạn mức API trong ngày (Gói Free Tier). Nhấp để mở Tùy chỉnh." 
+                className="flex items-center gap-2 sm:gap-3 bg-neutral-50 hover:bg-neutral-100/80 border border-neutral-200/50 rounded-full pl-2.5 pr-3 py-1.5 text-[11px] sm:text-xs font-semibold text-neutral-600 shadow-sm transition-all duration-200 cursor-pointer select-none"
+              >
+                <Gauge size={14} className={activeCount >= 1500 ? "text-red-500 animate-pulse" : activeCount >= 1200 ? "text-amber-500" : "text-emerald-500 animate-[pulse_3s_infinite]"} />
+                
+                {/* Desktop/Tablet Label */}
+                <span className="hidden sm:inline font-medium text-neutral-500">Hạn mức API:</span>
+                
+                {/* Visual Progress Bar (Desktop only) */}
+                <div className="hidden md:block w-16 bg-neutral-200 h-1.5 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full transition-all duration-500 ${getColorForCount(activeCount)}`}
+                    style={{ width: `${percent}%` }}
+                  />
+                </div>
+                
+                {/* Count Badge */}
+                <span className={`font-bold tracking-tight ${activeCount >= 1500 ? "text-red-600 animate-pulse" : activeCount >= 1200 ? "text-amber-600" : "text-neutral-800"}`}>
+                  <span className="sm:hidden">{activeCount >= 1000 ? `${(activeCount/1000).toFixed(1)}k` : activeCount}/1.5k</span>
+                  <span className="hidden sm:inline">{activeCount}/1.500 tin</span>
+                </span>
+                
+                {activeCount >= 1200 && (
+                  <AlertTriangle size={13} className={`${activeCount >= 1500 ? "text-red-500 animate-bounce" : "text-amber-500"} shrink-0`} />
+                )}
+              </div>
+            );
+          })()}
+
+          <div className="flex items-center gap-2">
             <button
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="p-2 mr-2 hover:bg-neutral-100 rounded-xl transition-all"
@@ -1167,6 +1430,7 @@ export default function App() {
             onSend={handleSend}
             isLoading={isLoading}
             currentSessionId={currentSessionId}
+            isQuotaExceeded={isQuotaExceeded}
           />
         </div>
       </div>
@@ -1294,7 +1558,26 @@ export default function App() {
                   <Settings2 size={18} />
                   <span className="text-sm font-medium">Tùy chỉnh</span>
                 </div>
-                <ChevronRight size={14} className="text-neutral-400" />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {(() => {
+                    const count = simulatedCountSetting !== null ? simulatedCountSetting : messageCountData.count;
+                    if (count > 0) {
+                      return (
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                          count >= 1500 
+                            ? "bg-red-50 text-red-600 border border-red-150 animate-pulse" 
+                            : count >= 1200 
+                              ? "bg-amber-50 text-amber-750 border border-amber-150" 
+                              : "bg-neutral-200 text-neutral-600"
+                        }`}>
+                          {count} tin
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
+                  <ChevronRight size={14} className="text-neutral-400" />
+                </div>
               </button>
 
               <button 
@@ -1310,6 +1593,19 @@ export default function App() {
                    <ChevronRight size={14} className="text-neutral-400 shrink-0" />
                 </div>
               </button>
+
+              {messages.length > 0 && (
+                <button 
+                  onClick={handleExportChat}
+                  className="w-full flex items-center justify-between p-3 hover:bg-neutral-200/30 rounded-xl transition-all group border border-transparent hover:border-neutral-200/50 hover:bg-neutral-200/20"
+                >
+                  <div className="flex items-center gap-3 text-neutral-700 group-hover:text-neutral-900">
+                    <Download size={18} className="text-neutral-500" />
+                    <span className="text-sm font-medium">Xuất chat (.txt)</span>
+                  </div>
+                  <span className="text-[10px] text-neutral-450 font-bold uppercase tracking-wider shrink-0">Lưu trữ</span>
+                </button>
+              )}
             </div>
           </div>
 
