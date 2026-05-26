@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     // 💡 THÊM DÒNG NÀY: Thay 'ten-repository-cua-ban' thành tên repo thực tế của bạn trên GitHub
-    base: '/same/', 
+    base: '/same/',
     
     plugins: [react(), tailwindcss()],
     define: {
