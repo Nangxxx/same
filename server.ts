@@ -37,13 +37,28 @@ async function startServer() {
         },
       });
 
+      // Filter out empty messages, or system-level warning/error messages
+      const filteredMessages = messages.filter((m: any) => {
+        if (!m.content || typeof m.content !== "string") return false;
+        const trimmed = m.content.trim();
+        if (!trimmed) return false;
+        // Skip warning or error indicators
+        if (trimmed.startsWith("⚠️")) return false;
+        return true;
+      });
+
+      if (filteredMessages.length === 0) {
+        res.status(400).json({ error: "Missing or invalid messages" });
+        return;
+      }
+
       // Format messages for @google/genai SDK
-      const history = messages.slice(0, -1).map((m: any) => ({
+      const history = filteredMessages.slice(0, -1).map((m: any) => ({
         role: (m.role === "model" ? "model" : "user") as "model" | "user",
         parts: [{ text: m.content || "" }],
       }));
 
-      const lastMessage = messages[messages.length - 1].content || "";
+      const lastMessage = filteredMessages[filteredMessages.length - 1].content || "";
 
       let activeIterator: any;
       let firstChunkResult: any;
@@ -83,10 +98,8 @@ async function startServer() {
 
       const modelsToTry = [
         "gemini-2.5-flash",
-        "gemini-1.5-flash",
-        "gemini-2.5-flash-lite",
         "gemini-3.1-flash-lite",
-        "gemini-1.5-flash-8b",
+        "gemini-2.5-flash-lite",
         "gemini-3.5-flash"
       ];
 
@@ -169,7 +182,21 @@ async function startServer() {
           }
         } catch (streamingErr: any) {
           console.error("Stream failed mid-stream after headers were sent:", streamingErr);
-          res.write(`\n\n[Lỗi kết nối giữa chừng: ${streamingErr.message || "Tín hiệu gián đoạn"}]`);
+          
+          const rawErr = streamingErr.message || String(streamingErr);
+          let userFriendlyMsg = rawErr;
+          
+          if (rawErr.includes("UNAVAILABLE") || rawErr.toLowerCase().includes("high demand") || rawErr.toLowerCase().includes("temporary")) {
+            userFriendlyMsg = "Hệ thống AI đang quá tải tạm thời (gặp trạng thái UNAVAILABLE do lượng người dùng tăng đột ngột).";
+          } else if (rawErr.includes("RESOURCE_EXHAUSTED") || rawErr.toLowerCase().includes("quota") || rawErr.toLowerCase().includes("limit")) {
+            userFriendlyMsg = "Yêu cầu đã vượt quá giới hạn lưu lượng tài nguyên của tài khoản (Quota / RESOURCE_EXHAUSTED).";
+          }
+          
+          res.write(
+            `\n\n⚠️ **[Lỗi kết nối giữa chừng]**\n` +
+            `*Kết nối với Midorima Shintaro bị gián đoạn giữa chừng do: ${userFriendlyMsg}*\n` +
+            `👉 *Mẹo nhỏ: Bạn có thể copy phần nội dung hội thoại đã tạo ở trên, sau đó nhấn biểu tượng **Tạo lại phản hồi** hoặc gửi lại tin nhắn mới để hệ thống tự động tải lại trên mô hình dự phòng!*`
+          );
         }
       }
       res.end();

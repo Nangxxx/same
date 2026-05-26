@@ -761,7 +761,7 @@ The first message / initial prompt of this chat session is in English. Therefore
 
     } catch (error: any) {
       console.error("Chat error:", error);
-      let errorMsg = "Đã có lỗi xảy ra. Vui lòng thử lại.";
+      let errorMsg = `Đã có lỗi xảy ra (${error?.message || error || "Lỗi kết nối không xác định"}). Vui lòng thử lại.`;
       if (error?.message?.toLowerCase().includes("quota") || error?.message?.includes("429") || error?.message?.includes("QUOTA_EXHAUSTED") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
         errorMsg = "Hết tài nguyên hoặc vượt quá hạn mức sử dụng miễn phí (Quota limit exceeded). Vui lòng thử lại sau giây lát hoặc nâng cấp tài khoản của bạn tại AI Studio.";
       } else if (error?.message?.toLowerCase().includes("unavailable") || error?.message?.includes("503") || error?.message?.includes("TEMPORARILY_UNAVAILABLE")) {
@@ -925,7 +925,7 @@ The first message / initial prompt of this chat session is in English. Therefore
 
     } catch (error: any) {
       console.error("Continue error:", error);
-      let errorMsg = "⚠️ Đã xảy ra lỗi khi tiếp tục truyện. Vui lòng thử lại.";
+      let errorMsg = `⚠️ Đã xảy ra lỗi khi tiếp tục truyện (${error?.message || error || "Lỗi kết nối không xác định"}). Vui lòng thử lại.`;
       if (error?.message?.toLowerCase().includes("quota") || error?.message?.includes("429") || error?.message?.includes("QUOTA_EXHAUSTED") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
         errorMsg = "⚠️ Vượt quá hạn mức sử dụng (Quota limit exceeded). Vui lòng nâng cấp gói dịch vụ hoặc chờ giây lát.";
       } else if (error?.message?.toLowerCase().includes("unavailable") || error?.message?.includes("503") || error?.message?.includes("TEMPORARILY_UNAVAILABLE")) {
@@ -1028,7 +1028,7 @@ The first message / initial prompt of this chat session is in English. Therefore
       }
     } catch (error: any) {
       console.error("Regenerate error:", error);
-      let errorMsg = "⚠️ Lỗi tạo lại phản hồi.";
+      let errorMsg = `⚠️ Lỗi tạo lại phản hồi (${error?.message || error || "Lỗi kết nối không xác định"}). Vui lòng thử lại.`;
       if (error?.message?.toLowerCase().includes("quota") || error?.message?.includes("429") || error?.message?.includes("QUOTA_EXHAUSTED") || error?.message?.includes("RESOURCE_EXHAUSTED")) {
         errorMsg = "⚠️ Vượt quá hạn mức sử dụng (Quota limit exceeded). Vui lòng thử lại sau giây lát hoặc nâng cấp tài khoản.";
       } else if (error?.message?.toLowerCase().includes("unavailable") || error?.message?.includes("503") || error?.message?.includes("TEMPORARILY_UNAVAILABLE")) {
